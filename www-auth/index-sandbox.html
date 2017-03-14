@@ -96,7 +96,14 @@
           redirectUrl: 'https://auth.neo4j.com/index-sandbox.html',
           responseType: 'token'
         }
-      }
+      },
+      additionalSignUpFields: [ {
+        name: "given_name",
+        placeholder: "Enter your first name"
+      },{
+        name: "family_name",
+        placeholder: "Enter your last name"
+      }]
     }
     var lock = new Auth0Lock('DxhmiF8TCeznI7Xoi08UyYScLGZnk4ke', 'neo4j-sync.auth0.com', options);
     var userProfile = null;
