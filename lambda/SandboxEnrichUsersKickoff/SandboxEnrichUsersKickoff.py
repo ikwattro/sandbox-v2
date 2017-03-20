@@ -11,6 +11,7 @@ import traceback
 import urllib
 import urllib2
 from string import Template
+import sblambda
 
 db_creds = None
 
@@ -20,7 +21,16 @@ DB_CREDS_OBJECT = os.environ["DB_CREDS_OBJECT"]
 FC_API_KEY = os.environ["FC_API_KEY"]
 FC_PEOPLE_URL = os.environ["FC_PEOPLE_URL"]
 FC_PEOPLE_WH_URL = os.environ["FC_PEOPLE_WH_URL"]
+MM_USER_ID = os.environ["MM_USER_ID"]
+MM_LICENSE_KEY = os.environ["MM_LICENSE_KEY"]
 
+
+
+DEFAULT_LOGGING_LEVEL = 0
+LOGGING_LEVEL = int(os.environ.get("LOGGING_LEVEL", DEFAULT_LOGGING_LEVEL) )
+
+logger = logging.getLogger()
+logger.setLevel(LOGGING_LEVEL)
 
 class MyEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -29,38 +39,120 @@ class MyEncoder(json.JSONEncoder):
 
         return json.JSONEncoder.default(self, obj)
 
+def get_users_to_query_auth0():
+    session = sblambda.get_db_session()
 
-def get_db_creds():
-    global db_creds
-    global DB_CREDS_BUCKET
-    global DB_CREDS_OBJECT
+    instances_query = """
+    MATCH 
+      (u:User)
+    WHERE
+      NOT exists(u.sent_to_auth0)
+      OR
+      u.sent_to_auth0 < (timestamp() - 1000 * 60 * 60 * 24 * 7)
+    SET
+      u.sent_to_auth0 = timestamp()
+    RETURN
+      id(u) AS id, u.name AS name, u.email AS email, u.auth0_key AS auth0_key
+    """
+    results = session.run(instances_query)
 
-    if db_creds:
-        return db_creds
+    users = []
+
+    for record in results:
+      record = dict((el[0], el[1]) for el in record.items())
+      users.append(record)
+
+    return users
+
+
+def get_users_to_query_ip():
+    session = sblambda.get_db_session()
+
+    instances_query = """
+    MATCH 
+      (u:User)
+    WHERE
+      NOT exists(u.mm_country)
+      AND
+      ( exists(u.lead_ip) OR exists(u.auth0_last_ip) )
+    RETURN
+      id(u) AS id, u.name AS name, u.email AS email, u.auth0_key AS auth0_key, coalesce(u.lead_ip,u.auth0_last_ip) AS last_ip
+    """
+    results = session.run(instances_query)
+
+    users = []
+
+    for record in results:
+      record = dict((el[0], el[1]) for el in record.items())
+      users.append(record)
+
+    return users
+
+def get_mm_ip_info(lastIp):
+    global MM_USER_ID
+    global MM_LICENSE_KEY
+
+    ipUrl = 'https://geoip.maxmind.com/geoip/v2.1/city/%s' % (lastIp)
+
+    base64string = base64.b64encode('%s:%s' % (MM_USER_ID, MM_LICENSE_KEY))
+
+    req = urllib2.Request(data = None, url = ipUrl)
+    req.add_header("Authorization", "Basic %s" % base64string)
+
+    response = urllib2.urlopen(req)
+    responseText = response.read()
+    responseJson = json.loads(responseText)
+    logger.info(responseJson)
+    return responseJson
+
+def updateIpInfo(auth0_key, ipInfo):
+    session = sblambda.get_db_session()
+
+    mmCountry = ipInfo['country']['names']['en']
+    if mmCountry == 'United States':
+        mmState = ipInfo['subdivisions'][0]['names']['en']
     else:
-        s3 = boto3.client('s3')
-        kms = boto3.client('kms')
-        response = s3.get_object(Bucket=DB_CREDS_BUCKET,Key=DB_CREDS_OBJECT)
-        contents = response['Body'].read()
+        mmState = ''
 
-        encryptedData = base64.b64decode(contents)
-        decryptedResponse = kms.decrypt(CiphertextBlob = encryptedData)
-        decryptedData = decryptedResponse['Plaintext']
-        db_creds = json.loads(decryptedData)
-        return db_creds
+    update_query = """
+    MATCH
+      (u:User)
+    WHERE
+      u.auth0_key={auth0_key}
+    SET
+      u.mm_country={mm_country},
+      u.mm_state={mm_state}
+    """
+    session.run(update_query, parameters={"auth0_key": auth0_key, "mm_country": mmCountry, "mm_state": mmState}).consume()
 
-creds = get_db_creds()
-driver = GraphDatabase.driver("bolt://%s" % (DB_HOST), auth=basic_auth(creds['user'], creds['password']), encrypted=False)
+def update_user(id, auth0_key, profile):
+    session = sblambda.get_db_session()
 
-def get_db_session():
-    global creds
-    global driver
+    instances_query = """
+    UNWIND {profile} AS pro
 
-    session = driver.session()
-    return session
+    MATCH 
+      (u:User)
+    WHERE
+      id(u)={id}
+      AND
+      u.auth0_key={auth0_key}
+    SET
+      u.auth0_last_ip = pro.last_ip
+    RETURN
+      id(u) AS id, u.name AS name, u.email AS email, u.auth0_key AS auth0_key
+    """
+    results = session.run(instances_query, parameters={"id": id, "profile": profile, "auth0_key": auth0_key})
+    users = []
+
+    for record in results:
+      record = dict((el[0], el[1]) for el in record.items())
+      users.append(record)
+
+    return users
 
 def get_emails_to_send_to_fc():
-    session = get_db_session()
+    session = sblambda.get_db_session()
 
     instances_query = """
     MATCH 
@@ -116,6 +208,24 @@ def lambda_handler(event, context):
     body = ""
     statusCode = 200
     contentType = 'application/json'
+    bodyJson = {
+    }
+
+    try:
+      users = get_users_to_query_auth0()
+      for user in users:
+        try:
+          profile = sblambda.get_auth0_user_profile(user['auth0_key'])
+          update_user(user['id'], user['auth0_key'], profile)
+          logger.info(json.dumps(profile))
+        except Exception as ex:
+          logger.error(traceback.format_exc())
+      body = "profile"
+    except Exception as e:
+      logger.error(traceback.format_exc())
+      print('Error in sending requests to FC')
+
+
 
     try:
       users = get_emails_to_send_to_fc()
@@ -128,9 +238,24 @@ def lambda_handler(event, context):
             logging.error(traceback.format_exc())
             print('Error in sending single request to FC')
         testInt = testInt + 1
-      body = "Handled %d emails" % (testInt)
+      bodyJson['SentEmailsToFc'] = testInt
     except Exception as e:
       logging.error(traceback.format_exc())
       print('Error in sending requests to FC')
 
-    return { "statusCode": statusCode, "headers": { "Content-type": contentType, "Access-Control-Allow-Origin": "*" }, "body": body }
+    try:
+      users = get_users_to_query_ip()
+      ipsQueried = 0
+      for user in users:
+        try:
+          ipResults = get_mm_ip_info(user['last_ip'])
+          updateIpInfo(user['auth0_key'], ipResults)
+          ipsQueried = ipsQueried + 1
+        except Exception as ex:
+          logger.error(traceback.format_exc())
+      bodyJson['ipAddressesQueriedGeo'] = ipsQueried
+    except Exception as e:
+      logger.error(traceback.format_exc())
+      print('Error in sending requests to IP geo deduction')
+      
+    return { "statusCode": statusCode, "headers": { "Content-type": contentType, "Access-Control-Allow-Origin": "*" }, "body": json.dumps(bodyJson) }
