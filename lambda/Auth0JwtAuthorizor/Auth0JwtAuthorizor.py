@@ -39,6 +39,8 @@ def add_update_user(user, jwt, decodedjwt):
 
     profile = {}
     name = '<default>'
+    first_name = None
+    last_name = None
     email = '<default>'
     picture = '<default>'
     email = '<default>'
@@ -81,22 +83,54 @@ def add_update_user(user, jwt, decodedjwt):
     if 'email_verified' in profile:
         if profile['email_verified'] == False:
           emailVerified = False
-    
+
+    if 'given_name' in profile:
+        first_name = profile['given_name']
+    elif 'user_metadata' in profile and 'given_name' in profile['user_metadata']:
+        first_name = profile['user_metadata']['given_name']
+
+    if 'family_name' in profile:
+        last_name = profile['family_name']
+    elif 'user_metadata' in profile and 'family_name' in profile['user_metadata']:
+        last_name = profile['user_metadata']['family_name']
+
 
     query = """
     MERGE
       (u:User {auth0_key: {auth0_key}})
-    SET
+    ON CREATE SET
       u.name={name},
       u.picture={picture},
       u.description={description},
       u.email={email},
-      u.email_verified={emailVerified}
+      u.email_verified={emailVerified},
+      u.lastAuthAt=timestamp(),
+      u.createdAt=timestamp(),
+      u.authCount=1
+    ON MATCH SET
+      u.picture={picture},
+      u.description={description},
+      u.email_verified={emailVerified},
+      u.lastAuthAt=timestamp(),
+      u.authCount = coalesce(u.authCount, 1) + 1
     RETURN u
     """
     session = sblambda.get_db_session()
     session.run(query,
       parameters={"auth0_key": user, "name": name, "picture": picture, "description": description, "email": email, "emailVerified": emailVerified}).consume()
+
+    update_names_query = """
+    MATCH
+      (u:User {auth0_key: {auth0_key}})
+    SET
+      u.first_name={first_name},
+      u.last_name={last_name}
+    RETURN u
+    """
+
+    if first_name or last_name:
+      session.run(update_names_query,
+        parameters={"auth0_key": user, "first_name": first_name, "last_name": last_name}).consume()
     
     if session.healthy: 
         session.close() 
@@ -157,6 +191,7 @@ def lambda_handler(event, context):
       policy.allowMethod(HttpVerb.POST, 'SandboxStopInstance')
       policy.allowMethod(HttpVerb.POST, 'SandboxBackupInstance')
       policy.allowMethod(HttpVerb.POST, 'SandboxExtend')
+      policy.allowMethod(HttpVerb.POST, 'SandboxConditionalAddLead')
     except jwt.ExpiredSignatureError:
       logger.info('JWT token denied because expired')
       raise Exception('Unauthorized')

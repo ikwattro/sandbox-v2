@@ -2,7 +2,7 @@
   const CODE_SNIPPETS_PATH = "https://s3.amazonaws.com/neo4j-sandbox-code-snippets";
 
   const AUTH_URL_ORIGIN = "https://auth.neo4j.com";
-  const AUTH_URL = "https://auth.neo4j.com/index-sandbox.html";
+  const AUTH_URL = "https://auth.neo4j.com/index-sandbox-v2.html";
   const AUTH_CLIENT_ID = "DxhmiF8TCeznI7Xoi08UyYScLGZnk4ke";
   const AUTH_DELEGATION_URL = "https://neo4j-sync.auth0.com/delegation"
   const AUTH_AUTHORIZE_URL = "https://neo4j-sync.auth0.com/authorize"
@@ -32,6 +32,7 @@
       localStorage.setItem('access_token', event.data.accessToken)
     } else if (event.origin == AUTH_URL_ORIGIN && event.data instanceof Object) {
       ga('send', 'event', 'auth', 'webevent back from auth0');
+      
       $('.jumbotron').fadeOut("fast");
       $('.marketing').fadeOut("fast");
       $('.btn-login').hide();
@@ -42,6 +43,9 @@
       localStorage.setItem('profile', JSON.stringify(event.data.profile))
       localStorage.setItem('access_token', event.data.accessToken)
       localStorage.setItem('refresh_token', event.data.refreshToken)
+
+      conditional_add_lead();
+
       getBrowserToken(true, authRenewPeriod);
       updateIdentity();
       profileObj = event.data.profile
@@ -58,6 +62,37 @@
       emailVerificationCheck(false);
       event.source.close();
     }
+  }
+
+  var conditional_add_lead = function() {
+    ga('send', 'event', 'sandbox', 'conditional-add-lead');
+    var id_token = localStorage.getItem('id_token');
+    var formValuesObj = {
+      "utmSource": Cookies.get('neo_utm_s'),
+      "marketoCookie": Cookies.get('_mkto_trk')
+    }
+    $.ajax
+    ({
+      type: "POST",
+      url: `${API_PATH}/SandboxConditionalAddLead`,
+      dataType: 'json',
+      data: JSON.stringify(formValuesObj),
+      contentType: "application/json",
+      async: true,
+      headers: {
+        "Authorization": id_token
+      },
+      success: function (data){
+        if (data['leadStatus'] == 'NEW') {
+          ga('send', 'event', 'sandbox', 'conditional-add-lead-status-' + data['leadStatus']);
+        } else {
+          ga('send', 'event', 'sandbox', 'conditional-add-lead-status-' + data['leadStatus']);
+        }
+      },
+      error: function (jqXHR, textStatus, errorThrown) {
+        ga('send', 'event', 'sandbox', 'conditional-add-lead-error');
+      }
+    });
   }
 
   var getBrowserToken = function(retryOnce, nextTimeout) {
@@ -151,7 +186,7 @@
     $('.btn-login').hide();
     win = window.open(AUTH_URL,
                 "_blank",
-                "location=1,status=0,scrollbars=0, width=1080,height=720");
+                "location=1,status=0,scrollbars=0, width=1080,height=800");
     try {
       win.moveTo(500, 300);
     } catch (e) {
@@ -1046,7 +1081,6 @@
     $('#sandboxListContainer').hide();
     $('#usecaseListContainer').hide();
     $('#identityContainer').hide();
-    window.location.href = window.location.href;
   };
 
 $(document).ready(function() {

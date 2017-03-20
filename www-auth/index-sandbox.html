@@ -80,7 +80,6 @@
         logo: 'https://neo4jsandbox.com/img/neo4j_logo_globe.png',
         primaryColor: '#58b535'
       },
-      initialScreen: (localStorage.getItem('previousLogin') == null)?'signUp':'login',
       languageDictionary: {
         title: 'Neo4j Sandbox',
         signin: {
@@ -97,6 +96,9 @@
           responseType: 'token'
         }
       },
+      socialButtonStyle: 'big',
+      allowedConnections: ['Username-Password-Authentication','google-oauth2','linkedin','twitter','github'],
+      rememberLastLogin: true,
       additionalSignUpFields: [ {
         name: "given_name",
         placeholder: "Enter your first name"
