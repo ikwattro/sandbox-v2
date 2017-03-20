@@ -10,5 +10,9 @@ cp -R SandboxLambdaLibrary/* SandboxGetInstanceByHashKey/
 cp -R SandboxLambdaLibrary/* SandboxStopInstance/
 cp -R SandboxLambdaLibrary/* SandboxBackupInstance/
 cp -R SandboxLambdaLibrary/* SandboxExtend/
+cp -R SandboxLambdaLibrary/* SandboxEnrichUsersKickoff/
+cp -R SandboxLambdaLibrary/* SandboxEnrichUsersProcessWebhook/
+cp -R SandboxLambdaLibrary/* SandboxEnrichUsersMaintenance/
+cp -R SandboxLambdaLibrary/* SandboxConditionalAddLead/
 
 ./makeZips.sh

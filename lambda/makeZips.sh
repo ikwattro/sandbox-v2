@@ -35,3 +35,15 @@ cd ..
 cd SandboxExtend
 zip -r9 ../SandboxExtend.zip *
 cd ..
+cd SandboxEnrichUsersKickoff
+zip -r9 ../SandboxEnrichUsersKickoff.zip *
+cd ..
+cd SandboxEnrichUsersProcessWebhook
+zip -r9 ../SandboxEnrichUsersProcessWebhook.zip *
+cd ..
+cd SandboxEnrichUsersMaintenance
+zip -r9 ../SandboxEnrichUsersMaintenance.zip *
+cd ..
+cd SandboxConditionalAddLead
+zip -r9 ../SandboxConditionalAddLead.zip *
+cd ..

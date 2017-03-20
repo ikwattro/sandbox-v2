@@ -1,0 +1,16 @@
+../random_words/__init__.py
+../random_words/lorem_ipsum.py
+../random_words/random_words.py
+../random_words/dmails.dat
+../random_words/lorem_ipsum.dat
+../random_words/nicknames.dat
+../random_words/nouns.dat
+../random_words/__init__.pyc
+../random_words/lorem_ipsum.pyc
+../random_words/random_words.pyc
+.
+dependency_links.txt
+PKG-INFO
+requires.txt
+SOURCES.txt
+top_level.txt
